@@ -32,7 +32,7 @@ self.addEventListener('fetch', function(event) {
   event.respondWith(
     caches.match(event.request).then(function(cached) {
       var fetchPromise = fetch(event.request).then(function(response) {
-        if (response && response.ok && event.request.url.indexOf('unpkg.com') !== -1) {
+          if (response && response.ok && (event.request.url.indexOf('unpkg.com') !== -1 || event.request.url.indexOf('jsdelivr.net') !== -1)) {
           var copy = response.clone();
           caches.open(CACHE_NAME).then(function(cache) {
             cache.put(event.request, copy);

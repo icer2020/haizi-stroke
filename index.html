@@ -35,6 +35,14 @@ button:hover { background: #3182ce; }
 .examples-btns { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
 .examples-btns button { padding: 6px 14px; font-size: 20px; background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px; cursor: pointer; min-width: 44px; }
 .examples-btns button:hover { background: #e2e8f0; }
+#pinyin-row { margin: 0 auto 8px; max-width: 100%; overflow-x: auto; overflow-y: hidden; white-space: nowrap; padding: 4px 0; }
+#pinyin-row::-webkit-scrollbar { display: none; }
+.py-cell { display: inline-flex; flex-direction: column; align-items: center; min-width: 44px; padding: 4px 6px; margin: 0 2px; border-radius: 8px; transition: all 0.3s; }
+.py-cell.current { background: #ebf8ff; box-shadow: 0 0 0 2px #4299e1; }
+.py-pinyin { font-size: 11px; color: #718096; line-height: 1.3; white-space: nowrap; }
+.py-cell.current .py-pinyin { color: #2b6cb0; font-weight: 700; }
+.py-char { font-size: 22px; color: #2d3748; line-height: 1.4; }
+.py-cell.current .py-char { color: #2b6cb0; }
 .status { margin-top: 12px; font-size: 13px; color: #a0aec0; }
 </style>
 </head>
@@ -49,6 +57,7 @@ button:hover { background: #3182ce; }
   <button id="show-btn">显示</button>
 </div>
 
+<div id="pinyin-row"></div>
 <div id="writer-target"></div>
 
 <div class="controls">
@@ -78,6 +87,70 @@ button:hover { background: #3182ce; }
   var writer = null;
   var charQueue = [];
   var queueIndex = 0;
+  var pinyinCache = {};
+
+  var PY_URL = 'https://cdn.jsdelivr.net/gh/mapull/chinese-dictionary@master/character/common/char_common_base.json';
+
+  function getPinyin(char, callback) {
+    if (PINYIN_DATA[char]) {
+      callback(PINYIN_DATA[char]);
+      return;
+    }
+    if (pinyinCache[char]) {
+      callback(pinyinCache[char]);
+      return;
+    }
+    if (pinyinCache._fetching) {
+      var check = setInterval(function() {
+        if (pinyinCache[char]) {
+          clearInterval(check);
+          callback(pinyinCache[char]);
+        }
+      }, 100);
+      return;
+    }
+    pinyinCache._fetching = true;
+    fetch(PY_URL)
+      .then(function(r) { return r.text(); })
+      .then(function(text) {
+        var lines = text.split('\n');
+        for (var i = 0; i < lines.length; i++) {
+          var line = lines[i].trim().replace(/,$/, '');
+          if (!line || line === '[' || line === ']') continue;
+          try {
+            var item = JSON.parse(line);
+            pinyinCache[item.char] = item.pinyin;
+          } catch(e) {}
+        }
+        delete pinyinCache._fetching;
+        callback(pinyinCache[char] || []);
+      })
+      .catch(function() {
+        delete pinyinCache._fetching;
+        callback([]);
+      });
+  }
+
+  function updatePinyinRow() {
+    var row = document.getElementById('pinyin-row');
+    if (charQueue.length === 0) { row.innerHTML = ''; return; }
+    var html = '';
+    for (var i = 0; i < charQueue.length; i++) {
+      var c = charQueue[i];
+      var py = PINYIN_DATA[c] || pinyinCache[c] || [];
+      var pyText = py.length ? py.join(' / ') : '&#160;';
+      var cls = i === queueIndex ? 'py-cell current' : 'py-cell';
+      html += '<span class="' + cls + '">' +
+        '<span class="py-pinyin">' + pyText + '</span>' +
+        '<span class="py-char">' + c + '</span>' +
+        '</span>';
+    }
+    row.innerHTML = html;
+    if (queueIndex >= 0 && queueIndex < charQueue.length) {
+      var cells = row.querySelectorAll('.py-cell');
+      if (cells[queueIndex]) cells[queueIndex].scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
+  }
 
   function displayNext() {
     if (queueIndex >= charQueue.length) {
@@ -105,12 +178,18 @@ button:hover { background: #3182ce; }
         .catch(function() {
           document.getElementById('status').textContent = '暂无 "' + char + '" 的笔画数据，跳过';
           queueIndex++;
+          updatePinyinRow();
           setTimeout(displayNext, 500);
         });
     }
   }
 
   function renderWithData(char, data) {
+    var c = char;
+    getPinyin(c, function(py) {
+      var pyText = py.length ? py.join(' / ') : '';
+      updatePinyinRow();
+    });
     try {
       writer = HanziWriter.create('writer-target', char, {
         charDataLoader: function(c, onLoad) { onLoad(data); },
@@ -136,6 +215,7 @@ button:hover { background: #3182ce; }
     } catch(e) {
       document.getElementById('status').textContent = '错误：' + e.message;
       queueIndex++;
+      updatePinyinRow();
       setTimeout(displayNext, 500);
     }
   }
@@ -155,6 +235,7 @@ button:hover { background: #3182ce; }
     charQueue = chars;
     queueIndex = 0;
     document.getElementById('char-input').value = text;
+    updatePinyinRow();
     displayNext();
   }
 
