@@ -93,13 +93,24 @@ button:hover { background: #3182ce; }
     document.getElementById('status').textContent = '加载 ' + char + ' 的数据...';
 
     var data = CHAR_DATA[char];
-    if (!data) {
-      document.getElementById('status').textContent = '暂无 "' + char + '" 的笔画数据，跳过';
-      queueIndex++;
-      setTimeout(displayNext, 500);
-      return;
+    if (data) {
+      renderWithData(char, data);
+    } else {
+      document.getElementById('status').textContent = '加载 ' + char + '（在线）...';
+      fetch('https://unpkg.com/hanzi-writer-data@2.0.1/' + encodeURIComponent(char) + '.json')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          renderWithData(char, d);
+        })
+        .catch(function() {
+          document.getElementById('status').textContent = '暂无 "' + char + '" 的笔画数据，跳过';
+          queueIndex++;
+          setTimeout(displayNext, 500);
+        });
     }
+  }
 
+  function renderWithData(char, data) {
     try {
       writer = HanziWriter.create('writer-target', char, {
         charDataLoader: function(c, onLoad) { onLoad(data); },

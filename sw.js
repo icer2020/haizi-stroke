@@ -31,7 +31,16 @@ self.addEventListener('activate', function(event) {
 self.addEventListener('fetch', function(event) {
   event.respondWith(
     caches.match(event.request).then(function(cached) {
-      return cached || fetch(event.request);
+      var fetchPromise = fetch(event.request).then(function(response) {
+        if (response && response.ok && event.request.url.indexOf('unpkg.com') !== -1) {
+          var copy = response.clone();
+          caches.open(CACHE_NAME).then(function(cache) {
+            cache.put(event.request, copy);
+          });
+        }
+        return response;
+      });
+      return cached || fetchPromise;
     })
   );
 });
