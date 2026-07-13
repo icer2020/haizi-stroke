@@ -87,29 +87,17 @@ button:hover { background: #3182ce; }
   var writer = null;
   var charQueue = [];
   var queueIndex = 0;
+  var busy = false;
+  var cancelId = 0;
   var pinyinCache = {};
 
   var PY_URL = 'https://cdn.jsdelivr.net/gh/mapull/chinese-dictionary@master/character/common/char_common_base.json';
 
-  function getPinyin(char, callback) {
-    if (PINYIN_DATA[char]) {
-      callback(PINYIN_DATA[char]);
-      return;
-    }
-    if (pinyinCache[char]) {
-      callback(pinyinCache[char]);
-      return;
-    }
-    if (pinyinCache._fetching) {
-      var check = setInterval(function() {
-        if (pinyinCache[char]) {
-          clearInterval(check);
-          callback(pinyinCache[char]);
-        }
-      }, 100);
-      return;
-    }
-    pinyinCache._fetching = true;
+  function loadAllPinyin(callback) {
+    if (pinyinCache._done) { callback(); return; }
+    if (pinyinCache._loading) { pinyinCache._pending.push(callback); return; }
+    pinyinCache._loading = true;
+    pinyinCache._pending = [callback];
     fetch(PY_URL)
       .then(function(r) { return r.text(); })
       .then(function(text) {
@@ -122,13 +110,24 @@ button:hover { background: #3182ce; }
             pinyinCache[item.char] = item.pinyin;
           } catch(e) {}
         }
-        delete pinyinCache._fetching;
-        callback(pinyinCache[char] || []);
+        pinyinCache._done = true;
+        delete pinyinCache._loading;
+        var q = pinyinCache._pending;
+        delete pinyinCache._pending;
+        for (var j = 0; j < q.length; j++) q[j]();
       })
       .catch(function() {
-        delete pinyinCache._fetching;
-        callback([]);
+        delete pinyinCache._loading;
+        var q = pinyinCache._pending;
+        delete pinyinCache._pending;
+        for (var j = 0; j < q.length; j++) q[j]();
       });
+  }
+
+  function getPinyin(char) {
+    if (PINYIN_DATA[char]) return PINYIN_DATA[char];
+    if (pinyinCache[char]) return pinyinCache[char];
+    return null;
   }
 
   function updatePinyinRow() {
@@ -137,8 +136,8 @@ button:hover { background: #3182ce; }
     var html = '';
     for (var i = 0; i < charQueue.length; i++) {
       var c = charQueue[i];
-      var py = PINYIN_DATA[c] || pinyinCache[c] || [];
-      var pyText = py.length ? py.join(' / ') : '&#160;';
+      var py = getPinyin(c);
+      var pyText = py ? py.join(' / ') : '&#160;';
       var cls = i === queueIndex ? 'py-cell current' : 'py-cell';
       html += '<span class="' + cls + '">' +
         '<span class="py-pinyin">' + pyText + '</span>' +
@@ -153,6 +152,9 @@ button:hover { background: #3182ce; }
   }
 
   function displayNext() {
+    if (busy) return;
+    var myId = ++cancelId;
+
     if (queueIndex >= charQueue.length) {
       document.getElementById('status').textContent = '完成！共 ' + charQueue.length + ' 字';
       writer = null;
@@ -162,20 +164,25 @@ button:hover { background: #3182ce; }
     var char = charQueue[queueIndex];
     var target = document.getElementById('writer-target');
     target.innerHTML = '';
-    writer = null;
+    if (writer) { try { writer.cancelAnimation(); } catch(e) {} writer = null; }
     document.getElementById('status').textContent = '加载 ' + char + ' 的数据...';
 
     var data = CHAR_DATA[char];
     if (data) {
-      renderWithData(char, data);
+      renderWithData(char, data, myId);
     } else {
       document.getElementById('status').textContent = '加载 ' + char + '（在线）...';
+      busy = true;
       fetch('https://unpkg.com/hanzi-writer-data@2.0.1/' + encodeURIComponent(char) + '.json')
         .then(function(r) { return r.json(); })
         .then(function(d) {
-          renderWithData(char, d);
+          if (cancelId !== myId) return;
+          busy = false;
+          renderWithData(char, d, myId);
         })
         .catch(function() {
+          if (cancelId !== myId) return;
+          busy = false;
           document.getElementById('status').textContent = '暂无 "' + char + '" 的笔画数据，跳过';
           queueIndex++;
           updatePinyinRow();
@@ -184,12 +191,16 @@ button:hover { background: #3182ce; }
     }
   }
 
-  function renderWithData(char, data) {
-    var c = char;
-    getPinyin(c, function(py) {
-      var pyText = py.length ? py.join(' / ') : '';
-      updatePinyinRow();
-    });
+  function renderWithData(char, data, myId) {
+    busy = true;
+    var needsPy = !getPinyin(char);
+    if (needsPy) {
+      loadAllPinyin(function() {
+        if (cancelId !== myId) return;
+        updatePinyinRow();
+      });
+    }
+
     try {
       writer = HanziWriter.create('writer-target', char, {
         charDataLoader: function(c, onLoad) { onLoad(data); },
@@ -205,14 +216,19 @@ button:hover { background: #3182ce; }
       var total = data.strokes.length;
       var label = queueIndex + 1;
       document.getElementById('status').textContent = label + '/' + charQueue.length + ' ' + char + '（' + total + ' 画）';
+      updatePinyinRow();
 
       writer.animateCharacter({
         onComplete: function() {
+          if (cancelId !== myId) return;
+          busy = false;
           queueIndex++;
-          setTimeout(displayNext, 600);
+          setTimeout(function() { displayNext(); }, 600);
         }
       });
     } catch(e) {
+      if (cancelId !== myId) return;
+      busy = false;
       document.getElementById('status').textContent = '错误：' + e.message;
       queueIndex++;
       updatePinyinRow();
@@ -221,6 +237,10 @@ button:hover { background: #3182ce; }
   }
 
   function startQueue(text) {
+    if (writer) { try { writer.cancelAnimation(); } catch(e) {} writer = null; }
+    cancelId++;
+    busy = false;
+
     var chars = [];
     for (var i = 0; i < text.length; i++) {
       var c = text.charAt(i);
@@ -236,7 +256,12 @@ button:hover { background: #3182ce; }
     queueIndex = 0;
     document.getElementById('char-input').value = text;
     updatePinyinRow();
-    displayNext();
+
+    loadAllPinyin(function() {
+      updatePinyinRow();
+    });
+
+    setTimeout(function() { displayNext(); }, 100);
   }
 
   document.addEventListener('DOMContentLoaded', function() {
