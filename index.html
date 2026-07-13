@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!--
+  @File          :   index.html
+  @LastModified  :   2026/07/13 10:30:00
+  @Author        :   ICer
+  @Contact       :   i_chip_backend@163.com
+  @WebSite       :   https://blog.csdn.net/i_chip_backend
+  @License       :   (C)Copyright 2018-2026, ICerDev
+  @Description   :   汉字笔画演示主页面
+-->
+<title>汉字笔画演示 - 阳阳学汉字</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; min-height: 100vh; display: flex; justify-content: center; align-items: center; }
+.container { background: #fff; border-radius: 20px; padding: 40px; box-shadow: 0 10px 40px rgba(0,0,0,0.1); text-align: center; max-width: 600px; width: 90%; }
+h1 { font-size: 24px; color: #2d3748; margin-bottom: 8px; }
+.subtitle { color: #718096; font-size: 14px; margin-bottom: 24px; }
+.input-area { display: flex; gap: 10px; margin-bottom: 24px; justify-content: center; }
+input { padding: 10px 16px; font-size: 18px; border: 2px solid #e2e8f0; border-radius: 10px; width: 120px; text-align: center; outline: none; transition: border-color 0.2s; }
+input:focus { border-color: #4299e1; }
+button { padding: 10px 24px; font-size: 16px; background: #4299e1; color: #fff; border: none; border-radius: 10px; cursor: pointer; transition: background 0.2s; }
+button:hover { background: #3182ce; }
+#writer-target { width: 300px; height: 300px; margin: 0 auto 16px; border: 2px solid #e2e8f0; border-radius: 12px; background: #fafafa; }
+.controls { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.controls button { background: #edf2f7; color: #2d3748; }
+.controls button:hover { background: #e2e8f0; }
+.examples { margin-top: 24px; padding-top: 20px; border-top: 1px solid #e2e8f0; }
+.examples-title { font-size: 13px; color: #a0aec0; margin-bottom: 10px; }
+.examples-btns { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.examples-btns button { padding: 6px 14px; font-size: 20px; background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px; cursor: pointer; min-width: 44px; }
+.examples-btns button:hover { background: #e2e8f0; }
+.status { margin-top: 12px; font-size: 13px; color: #a0aec0; }
+</style>
+</head>
+<body>
+
+<div class="container">
+<h1>汉字笔画演示</h1>
+<p class="subtitle">输入汉字，查看标准笔画顺序</p>
+
+<div class="input-area">
+  <input type="text" id="char-input" value="阳光" placeholder="输入汉字或句子">
+  <button id="show-btn">显示</button>
+</div>
+
+<div id="writer-target"></div>
+
+<div class="controls">
+  <button id="pause-btn">暂停</button>
+  <button id="resume-btn">继续</button>
+  <button id="loop-btn">循环</button>
+</div>
+
+<div class="examples">
+  <div class="examples-title">常用字快速查看</div>
+  <div class="examples-btns" id="examples-btns">
+    <button>阳</button><button>光</button><button>明</button>
+    <button>学</button><button>习</button><button>大</button>
+    <button>中</button><button>人</button><button>水</button>
+    <button>火</button><button>山</button><button>花</button>
+    <button>鸟</button><button>马</button><button>龙</button>
+  </div>
+</div>
+
+<div class="status" id="status">提示：点击示例字查看笔画动画</div>
+</div>
+
+<script src="hanzi-writer.min.js"></script>
+<script src="char-data-inline.js"></script>
+<script>
+(function() {
+  var writer = null;
+  var charQueue = [];
+  var queueIndex = 0;
+
+  function displayNext() {
+    if (queueIndex >= charQueue.length) {
+      document.getElementById('status').textContent = '完成！共 ' + charQueue.length + ' 字';
+      writer = null;
+      return;
+    }
+
+    var char = charQueue[queueIndex];
+    var target = document.getElementById('writer-target');
+    target.innerHTML = '';
+    writer = null;
+    document.getElementById('status').textContent = '加载 ' + char + ' 的数据...';
+
+    var data = CHAR_DATA[char];
+    if (!data) {
+      document.getElementById('status').textContent = '暂无 "' + char + '" 的笔画数据，跳过';
+      queueIndex++;
+      setTimeout(displayNext, 500);
+      return;
+    }
+
+    try {
+      writer = HanziWriter.create('writer-target', char, {
+        charDataLoader: function(c, onLoad) { onLoad(data); },
+        width: 300,
+        height: 300,
+        padding: 20,
+        strokeColor: '#4299e1',
+        radicalColor: '#e53e3e',
+        strokeAnimationSpeed: 1.5,
+        showCharacter: true,
+      });
+
+      var total = data.strokes.length;
+      var label = queueIndex + 1;
+      document.getElementById('status').textContent = label + '/' + charQueue.length + ' ' + char + '（' + total + ' 画）';
+
+      writer.animateCharacter({
+        onComplete: function() {
+          queueIndex++;
+          setTimeout(displayNext, 600);
+        }
+      });
+    } catch(e) {
+      document.getElementById('status').textContent = '错误：' + e.message;
+      queueIndex++;
+      setTimeout(displayNext, 500);
+    }
+  }
+
+  function startQueue(text) {
+    var chars = [];
+    for (var i = 0; i < text.length; i++) {
+      var c = text.charAt(i);
+      if (c >= '\u4e00' && c <= '\u9fff') {
+        chars.push(c);
+      }
+    }
+    if (chars.length === 0) {
+      document.getElementById('status').textContent = '未找到汉字';
+      return;
+    }
+    charQueue = chars;
+    queueIndex = 0;
+    document.getElementById('char-input').value = text;
+    displayNext();
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    var input = document.getElementById('char-input');
+    var showBtn = document.getElementById('show-btn');
+
+    showBtn.addEventListener('click', function() {
+      var val = input.value.trim();
+      if (val) startQueue(val);
+    });
+
+    input.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        var val = input.value.trim();
+        if (val) startQueue(val);
+      }
+    });
+
+    document.getElementById('pause-btn').addEventListener('click', function() {
+      if (writer) writer.pauseAnimation();
+    });
+
+    document.getElementById('resume-btn').addEventListener('click', function() {
+      if (writer) writer.resumeAnimation();
+    });
+
+    document.getElementById('loop-btn').addEventListener('click', function() {
+      if (!writer) return;
+      var btn = this;
+      var looping = btn.textContent !== '循环';
+      btn.textContent = looping ? '循环' : '循环中...';
+      btn.style.background = looping ? '' : '#c6f6d5';
+      looping ? writer.loopCharacterAnimation() : writer.pauseAnimation();
+    });
+
+    document.getElementById('examples-btns').addEventListener('click', function(e) {
+      if (e.target.tagName === 'BUTTON') startQueue(e.target.textContent);
+    });
+
+    startQueue('阳光');
+  });
+})();
+</script>
+</body>
+</html>
