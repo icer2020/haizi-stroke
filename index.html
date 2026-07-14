@@ -30,11 +30,7 @@ button:hover { background: #3182ce; }
 .controls { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
 .controls button { background: #edf2f7; color: #2d3748; }
 .controls button:hover { background: #e2e8f0; }
-.examples { margin-top: 24px; padding-top: 20px; border-top: 1px solid #e2e8f0; }
-.examples-title { font-size: 13px; color: #a0aec0; margin-bottom: 10px; }
-.examples-btns { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
-.examples-btns button { padding: 6px 14px; font-size: 20px; background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px; cursor: pointer; min-width: 44px; }
-.examples-btns button:hover { background: #e2e8f0; }
+
 #pinyin-row { margin: 0 auto 8px; max-width: 100%; overflow-x: auto; overflow-y: hidden; white-space: nowrap; padding: 4px 0; }
 #pinyin-row::-webkit-scrollbar { display: none; }
 .py-cell { display: inline-flex; flex-direction: column; align-items: center; min-width: 44px; padding: 4px 6px; margin: 0 2px; border-radius: 8px; transition: all 0.3s; }
@@ -90,24 +86,14 @@ button:hover { background: #3182ce; }
 </div>
 
 <div class="speed-selector" id="speed-selector">
+  <span style="font-size:13px;color:#4a5568;line-height:34px;margin-right:6px;user-select:none;">笔画速度</span>
   <button data-speed="0.8">慢</button>
   <button data-speed="1.5" class="active">正常</button>
   <button data-speed="3.0">快</button>
   <button data-speed="5.0">极快</button>
 </div>
 
-<div class="examples">
-  <div class="examples-title">常用字快速查看</div>
-  <div class="examples-btns" id="examples-btns">
-    <button>阳</button><button>光</button><button>明</button>
-    <button>学</button><button>习</button><button>大</button>
-    <button>中</button><button>人</button><button>水</button>
-    <button>火</button><button>山</button><button>花</button>
-    <button>鸟</button><button>马</button><button>龙</button>
-  </div>
-</div>
-
-<div class="status" id="status">提示：点击示例字查看笔画动画</div>
+<div class="status" id="status">等待输入...</div>
 <div><button class="export-btn" id="export-btn">导出拼音修正</button></div>
 </div>
 
@@ -369,6 +355,7 @@ button:hover { background: #3182ce; }
         strokeColor: '#4299e1',
         radicalColor: '#e53e3e',
         strokeAnimationSpeed: strokeSpeed,
+        delayBetweenStrokes: 1000 / strokeSpeed,
         showCharacter: true,
       });
 
@@ -509,10 +496,6 @@ button:hover { background: #3182ce; }
         a.click();
         URL.revokeObjectURL(url);
       } catch(e) { alert('导出失败：' + e.message); }
-    });
-
-    document.getElementById('examples-btns').addEventListener('click', function(e) {
-      if (e.target.tagName === 'BUTTON') startQueue(e.target.textContent);
     });
 
     loadPinyinFixes();
