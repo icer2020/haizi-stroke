@@ -44,6 +44,7 @@ button:hover { background: #3182ce; }
 .py-char { font-size: 22px; color: #2d3748; line-height: 1.4; }
 .py-cell.current .py-char { color: #2b6cb0; }
 .status { margin-top: 12px; font-size: 13px; color: #a0aec0; }
+#stroke-info { font-size: 14px; color: #4a5568; margin-bottom: 6px; min-height: 21px; }
 </style>
 </head>
 <body>
@@ -57,6 +58,7 @@ button:hover { background: #3182ce; }
   <button id="show-btn">显示</button>
 </div>
 
+<div id="stroke-info"></div>
 <div id="pinyin-row"></div>
 <div id="writer-target"></div>
 
@@ -197,7 +199,8 @@ button:hover { background: #3182ce; }
 
       var total = data.strokes.length;
       var label = queueIndex + 1;
-      document.getElementById('status').textContent = label + '/' + charQueue.length + ' ' + char + '（' + total + ' 画）';
+      document.getElementById('stroke-info').textContent = label + '/' + charQueue.length + ' · ' + total + ' 画';
+      document.getElementById('status').textContent = '';
       updatePinyinRow();
 
       writer.animateCharacter({
