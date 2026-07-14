@@ -46,6 +46,10 @@ button:hover { background: #3182ce; }
 .py-cell.current .py-char { color: #2b6cb0; }
 .status { margin-top: 12px; font-size: 13px; color: #a0aec0; }
 #stroke-info { font-size: 14px; color: #4a5568; margin-bottom: 6px; min-height: 21px; }
+.speed-selector { display: flex; gap: 6px; justify-content: center; margin-bottom: 16px; }
+.speed-selector button { padding: 4px 14px; font-size: 13px; background: #edf2f7; color: #4a5568; border: 2px solid transparent; border-radius: 8px; cursor: pointer; transition: all 0.2s; }
+.speed-selector button:hover { background: #e2e8f0; }
+.speed-selector button.active { background: #ebf8ff; border-color: #4299e1; color: #2b6cb0; font-weight: 700; }
 </style>
 </head>
 <body>
@@ -67,6 +71,13 @@ button:hover { background: #3182ce; }
   <button id="pause-btn">暂停</button>
   <button id="resume-btn">继续</button>
   <button id="loop-btn">循环</button>
+</div>
+
+<div class="speed-selector" id="speed-selector">
+  <button data-speed="0.8">慢</button>
+  <button data-speed="1.5" class="active">正常</button>
+  <button data-speed="3.0">快</button>
+  <button data-speed="5.0">极快</button>
 </div>
 
 <div class="examples">
@@ -94,6 +105,7 @@ button:hover { background: #3182ce; }
   var queueIndex = 0;
   var busy = false;
   var cancelId = 0;
+  var strokeSpeed = 1.5;
 
   function getPinyinFallback(char) {
     if (PINYIN_DATA[char]) return PINYIN_DATA[char].join(' / ');
@@ -239,7 +251,7 @@ button:hover { background: #3182ce; }
         padding: 20,
         strokeColor: '#4299e1',
         radicalColor: '#e53e3e',
-        strokeAnimationSpeed: 1.5,
+        strokeAnimationSpeed: strokeSpeed,
         showCharacter: true,
       });
 
@@ -330,6 +342,16 @@ button:hover { background: #3182ce; }
       btn.textContent = looping ? '循环' : '循环中...';
       btn.style.background = looping ? '' : '#c6f6d5';
       looping ? writer.loopCharacterAnimation() : writer.pauseAnimation();
+    });
+
+    document.getElementById('speed-selector').addEventListener('click', function(e) {
+      var btn = e.target.closest('button');
+      if (!btn) return;
+      var speed = parseFloat(btn.getAttribute('data-speed'));
+      if (!speed) return;
+      strokeSpeed = speed;
+      this.querySelectorAll('button').forEach(function(b) { b.classList.remove('active'); });
+      btn.classList.add('active');
     });
 
     document.getElementById('examples-btns').addEventListener('click', function(e) {
