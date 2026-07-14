@@ -39,7 +39,8 @@ button:hover { background: #3182ce; }
 #pinyin-row::-webkit-scrollbar { display: none; }
 .py-cell { display: inline-flex; flex-direction: column; align-items: center; min-width: 44px; padding: 4px 6px; margin: 0 2px; border-radius: 8px; transition: all 0.3s; }
 .py-cell.current { background: #ebf8ff; box-shadow: 0 0 0 2px #4299e1; }
-.py-pinyin { font-size: 11px; color: #718096; line-height: 1.3; white-space: nowrap; }
+.py-pinyin { font-size: 13px; color: #718096; line-height: 1.4; white-space: nowrap; }
+.py-pinyin-all { font-size: 12px; color: #a0aec0; }
 .py-cell.current .py-pinyin { color: #2b6cb0; font-weight: 700; }
 .py-char { font-size: 22px; color: #2d3748; line-height: 1.4; }
 .py-cell.current .py-char { color: #2b6cb0; }
@@ -102,25 +103,70 @@ button:hover { background: #3182ce; }
   function computeQueuePinyin(text, chars) {
     if (window.pinyinPro) {
       try {
-        var arr = window.pinyinPro.pinyin(text, { toneType: 'tone', type: 'array' });
-        var result = [];
-        for (var ti = 0; ti < text.length && ti < arr.length; ti++) {
-          if (text[ti] >= '\u4e00' && text[ti] <= '\u9fff') {
-            if (/^[a-zāáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜü]/i.test(arr[ti])) {
-              result.push(arr[ti]);
-            } else {
-              result.push(getPinyinFallback(text[ti]));
+        var fullText = text;
+        var surnameOpt = 'off';
+        if (fullText.length >= 2 && fullText.length <= 4) {
+          var nonCjk = 0;
+          for (var si2 = 0; si2 < fullText.length; si2++) {
+            if (!(fullText[si2] >= '\u4e00' && fullText[si2] <= '\u9fff')) nonCjk++;
+          }
+          if (nonCjk === 0) surnameOpt = 'head';
+        }
+        var allData = window.pinyinPro.pinyin(text, { toneType: 'tone', type: 'all', segmentit: 2, surname: surnameOpt });
+        var segs = window.pinyinPro.segment(text);
+        var wordMap = {};
+        var pos = 0;
+        for (var si = 0; si < segs.length; si++) {
+          var segText = segs[si].origin;
+          if (segText.length > 1) {
+            for (var j = 0; j < segText.length; j++) {
+              if (segText[j] >= '\u4e00' && segText[j] <= '\u9fff') {
+                wordMap[pos + j] = true;
+              }
             }
+          }
+          pos += segText.length;
+        }
+
+        var result = [];
+        for (var ti = 0; ti < text.length && ti < allData.length; ti++) {
+          if (text[ti] >= '\u4e00' && text[ti] <= '\u9fff') {
+            var d = allData[ti];
+            var isPoly = d.polyphonic && d.polyphonic.length > 1;
+            var inWord = !!wordMap[ti];
+            var disambiguated = inWord || (isPoly && d.result !== d.polyphonic[0]);
+            result.push({
+              result: d.result,
+              polyphonic: d.polyphonic || [],
+              isPoly: isPoly,
+              disambiguated: disambiguated
+            });
           }
         }
         return result;
-      } catch(e) {}
+      } catch(e) { console.error('pinyin-pro error:', e); }
     }
     var fallback = [];
     for (var i = 0; i < chars.length; i++) {
-      fallback.push(getPinyinFallback(chars[i]));
+      fallback.push({ result: getPinyinFallback(chars[i]), polyphonic: [], isPoly: false, disambiguated: true });
     }
     return fallback;
+  }
+
+  function formatPinyinCell(info) {
+    if (!info.isPoly) {
+      return '<span class="py-pinyin">' + (info.result || '&#160;') + '</span>';
+    }
+    if (info.disambiguated) {
+      return '<span class="py-pinyin">' + info.result + '</span>';
+    }
+    var allHtml = '';
+    for (var k = 0; k < info.polyphonic.length; k++) {
+      if (k > 0) allHtml += '<span class="py-pinyin-all"> / </span>';
+      var cls = info.polyphonic[k] === info.result ? 'py-pinyin' : 'py-pinyin-all';
+      allHtml += '<span class="' + cls + '">' + info.polyphonic[k] + '</span>';
+    }
+    return allHtml;
   }
 
   function updatePinyinRow() {
@@ -128,10 +174,10 @@ button:hover { background: #3182ce; }
     if (charQueue.length === 0) { row.innerHTML = ''; return; }
     var html = '';
     for (var i = 0; i < charQueue.length; i++) {
-      var py = queuePinyin[i] || '&#160;';
+      var info = queuePinyin[i] || { result: '&#160;', isPoly: false, polyphonic: [] };
       var cls = i === queueIndex ? 'py-cell current' : 'py-cell';
       html += '<span class="' + cls + '">' +
-        '<span class="py-pinyin">' + py + '</span>' +
+        formatPinyinCell(info) +
         '<span class="py-char">' + charQueue[i] + '</span>' +
         '</span>';
     }
@@ -246,6 +292,14 @@ button:hover { background: #3182ce; }
   }
 
   document.addEventListener('DOMContentLoaded', function() {
+    if (window.pinyinPro && window.pinyinPro.customPinyin) {
+      window.pinyinPro.customPinyin({
+        '朝三暮四': 'zhāo sān mù sì',
+        '朝秦暮楚': 'zhāo qín mù chǔ',
+        '单于': 'chán yú',
+      });
+    }
+
     var input = document.getElementById('char-input');
     var showBtn = document.getElementById('show-btn');
 
