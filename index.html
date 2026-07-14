@@ -81,53 +81,44 @@ button:hover { background: #3182ce; }
 </div>
 
 <script src="hanzi-writer.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pinyin-pro@3.28.1/dist/index.js"></script>
 <script src="char-data-inline.js"></script>
 <script>
 (function() {
   var writer = null;
   var charQueue = [];
+  var queuePinyin = [];
   var queueIndex = 0;
   var busy = false;
   var cancelId = 0;
-  var pinyinCache = {};
 
-  var PY_URL = 'https://cdn.jsdelivr.net/gh/mapull/chinese-dictionary@master/character/common/char_common_base.json';
-
-  function loadAllPinyin(callback) {
-    if (pinyinCache._done) { callback(); return; }
-    if (pinyinCache._loading) { pinyinCache._pending.push(callback); return; }
-    pinyinCache._loading = true;
-    pinyinCache._pending = [callback];
-    fetch(PY_URL)
-      .then(function(r) { return r.text(); })
-      .then(function(text) {
-        var lines = text.split('\n');
-        for (var i = 0; i < lines.length; i++) {
-          var line = lines[i].trim().replace(/,$/, '');
-          if (!line || line === '[' || line === ']') continue;
-          try {
-            var item = JSON.parse(line);
-            pinyinCache[item.char] = item.pinyin;
-          } catch(e) {}
-        }
-        pinyinCache._done = true;
-        delete pinyinCache._loading;
-        var q = pinyinCache._pending;
-        delete pinyinCache._pending;
-        for (var j = 0; j < q.length; j++) q[j]();
-      })
-      .catch(function() {
-        delete pinyinCache._loading;
-        var q = pinyinCache._pending;
-        delete pinyinCache._pending;
-        for (var j = 0; j < q.length; j++) q[j]();
-      });
+  function getPinyinFallback(char) {
+    if (PINYIN_DATA[char]) return PINYIN_DATA[char].join(' / ');
+    return char;
   }
 
-  function getPinyin(char) {
-    if (PINYIN_DATA[char]) return PINYIN_DATA[char];
-    if (pinyinCache[char]) return pinyinCache[char];
-    return null;
+  function computeQueuePinyin(text, chars) {
+    if (window.pinyinPro) {
+      try {
+        var arr = window.pinyinPro.pinyin(text, { toneType: 'tone', type: 'array' });
+        var result = [];
+        for (var ti = 0; ti < text.length && ti < arr.length; ti++) {
+          if (text[ti] >= '\u4e00' && text[ti] <= '\u9fff') {
+            if (/^[a-zāáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜü]/i.test(arr[ti])) {
+              result.push(arr[ti]);
+            } else {
+              result.push(getPinyinFallback(text[ti]));
+            }
+          }
+        }
+        return result;
+      } catch(e) {}
+    }
+    var fallback = [];
+    for (var i = 0; i < chars.length; i++) {
+      fallback.push(getPinyinFallback(chars[i]));
+    }
+    return fallback;
   }
 
   function updatePinyinRow() {
@@ -135,13 +126,11 @@ button:hover { background: #3182ce; }
     if (charQueue.length === 0) { row.innerHTML = ''; return; }
     var html = '';
     for (var i = 0; i < charQueue.length; i++) {
-      var c = charQueue[i];
-      var py = getPinyin(c);
-      var pyText = py ? py.join(' / ') : '&#160;';
+      var py = queuePinyin[i] || '&#160;';
       var cls = i === queueIndex ? 'py-cell current' : 'py-cell';
       html += '<span class="' + cls + '">' +
-        '<span class="py-pinyin">' + pyText + '</span>' +
-        '<span class="py-char">' + c + '</span>' +
+        '<span class="py-pinyin">' + py + '</span>' +
+        '<span class="py-char">' + charQueue[i] + '</span>' +
         '</span>';
     }
     row.innerHTML = html;
@@ -193,13 +182,6 @@ button:hover { background: #3182ce; }
 
   function renderWithData(char, data, myId) {
     busy = true;
-    var needsPy = !getPinyin(char);
-    if (needsPy) {
-      loadAllPinyin(function() {
-        if (cancelId !== myId) return;
-        updatePinyinRow();
-      });
-    }
 
     try {
       writer = HanziWriter.create('writer-target', char, {
@@ -255,12 +237,8 @@ button:hover { background: #3182ce; }
     charQueue = chars;
     queueIndex = 0;
     document.getElementById('char-input').value = text;
+    queuePinyin = computeQueuePinyin(text, chars);
     updatePinyinRow();
-
-    loadAllPinyin(function() {
-      updatePinyinRow();
-    });
-
     setTimeout(function() { displayNext(); }, 100);
   }
 
