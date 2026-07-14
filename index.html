@@ -125,33 +125,18 @@ button:hover { background: #3182ce; }
           if (nonCjk === 0) surnameOpt = 'head';
         }
         var allData = window.pinyinPro.pinyin(text, { toneType: 'tone', type: 'all', segmentit: 2, surname: surnameOpt });
-        var segs = window.pinyinPro.segment(text);
-        var wordMap = {};
-        var pos = 0;
-        for (var si = 0; si < segs.length; si++) {
-          var segText = segs[si].origin;
-          if (segText.length > 1) {
-            for (var j = 0; j < segText.length; j++) {
-              if (segText[j] >= '\u4e00' && segText[j] <= '\u9fff') {
-                wordMap[pos + j] = true;
-              }
-            }
-          }
-          pos += segText.length;
-        }
 
+        var isSingleInput = chars.length <= 1;
         var result = [];
         for (var ti = 0; ti < text.length && ti < allData.length; ti++) {
           if (text[ti] >= '\u4e00' && text[ti] <= '\u9fff') {
             var d = allData[ti];
             var isPoly = d.polyphonic && d.polyphonic.length > 1;
-            var inWord = !!wordMap[ti];
-            var disambiguated = inWord || (isPoly && d.result !== d.polyphonic[0]);
             result.push({
               result: d.result,
               polyphonic: d.polyphonic || [],
               isPoly: isPoly,
-              disambiguated: disambiguated
+              disambiguated: !isSingleInput
             });
           }
         }
