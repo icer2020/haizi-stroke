@@ -50,6 +50,22 @@ button:hover { background: #3182ce; }
 .speed-selector button { padding: 4px 14px; font-size: 13px; background: #edf2f7; color: #4a5568; border: 2px solid transparent; border-radius: 8px; cursor: pointer; transition: all 0.2s; }
 .speed-selector button:hover { background: #e2e8f0; }
 .speed-selector button.active { background: #ebf8ff; border-color: #4299e1; color: #2b6cb0; font-weight: 700; }
+
+.popup-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.3); z-index: 1000; justify-content: center; align-items: center; }
+.popup-overlay.open { display: flex; }
+.popup-box { background: #fff; border-radius: 16px; padding: 24px; max-width: 320px; width: 90%; box-shadow: 0 10px 40px rgba(0,0,0,0.2); text-align: center; }
+.popup-char { font-size: 48px; color: #2d3748; margin-bottom: 4px; }
+.popup-scope { font-size: 12px; color: #a0aec0; margin-bottom: 16px; }
+.popup-options { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.popup-options button { padding: 10px; font-size: 16px; background: #f7fafc; border: 2px solid #e2e8f0; border-radius: 10px; cursor: pointer; transition: all 0.2s; color: #2d3748; }
+.popup-options button:hover { border-color: #4299e1; background: #ebf8ff; }
+.popup-options button.selected { border-color: #4299e1; background: #ebf8ff; font-weight: 700; }
+.popup-cancel { padding: 8px 20px; font-size: 14px; background: #edf2f7; color: #718096; border: none; border-radius: 8px; cursor: pointer; }
+.popup-cancel:hover { background: #e2e8f0; }
+
+.export-btn { margin-top: 8px; padding: 6px 16px; font-size: 12px; background: #edf2f7; color: #718096; border: none; border-radius: 6px; cursor: pointer; }
+.export-btn:hover { background: #e2e8f0; }
+.py-cell { cursor: pointer; }
 </style>
 </head>
 <body>
@@ -92,6 +108,16 @@ button:hover { background: #3182ce; }
 </div>
 
 <div class="status" id="status">提示：点击示例字查看笔画动画</div>
+<div><button class="export-btn" id="export-btn">导出拼音修正</button></div>
+</div>
+
+<div class="popup-overlay" id="popup-overlay" onclick="if(event.target===this)document.getElementById('popup-overlay').classList.remove('open')">
+  <div class="popup-box">
+    <div class="popup-char" id="popup-char"></div>
+    <div class="popup-scope" id="popup-scope"></div>
+    <div class="popup-options" id="popup-options"></div>
+    <button class="popup-cancel" onclick="document.getElementById('popup-overlay').classList.remove('open')">取消</button>
+  </div>
 </div>
 
 <script src="hanzi-writer.min.js"></script>
@@ -106,6 +132,8 @@ button:hover { background: #3182ce; }
   var busy = false;
   var cancelId = 0;
   var strokeSpeed = 1.5;
+  var currentText = '';
+  var longPressTimer = null;
 
   function getPinyinFallback(char) {
     if (PINYIN_DATA[char]) return PINYIN_DATA[char].join(' / ');
@@ -183,6 +211,110 @@ button:hover { background: #3182ce; }
       var cells = row.querySelectorAll('.py-cell');
       if (cells[queueIndex]) cells[queueIndex].scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
     }
+  }
+
+  function loadPinyinFixes() {
+    try {
+      var saved = localStorage.getItem('pinyin_fixes');
+      if (saved && window.pinyinPro && window.pinyinPro.customPinyin) {
+        var fixes = JSON.parse(saved);
+        var toApply = {};
+        for (var k in fixes) {
+          if (Object.prototype.hasOwnProperty.call(fixes, k)) toApply[k] = fixes[k];
+        }
+        if (Object.keys(toApply).length > 0) {
+          window.pinyinPro.customPinyin(toApply);
+        }
+      }
+    } catch(e) {}
+  }
+
+  function findSegmentForIndex(text, charIdx) {
+    if (!window.pinyinPro) return null;
+    var segs = window.pinyinPro.segment(text);
+    var pos = 0;
+    for (var si = 0; si < segs.length; si++) {
+      var segText = segs[si].origin;
+      var segLen = 0;
+      for (var ci = 0; ci < segText.length; ci++) {
+        if (segText[ci] >= '\u4e00' && segText[ci] <= '\u9fff') segLen++;
+      }
+      if (charIdx >= pos && charIdx < pos + segLen) {
+        return { text: segText, offsetInSeg: charIdx - pos };
+      }
+      pos += segLen;
+    }
+    return null;
+  }
+
+  function showCorrectionPopup(charIndex) {
+    var info = queuePinyin[charIndex];
+    if (!info || !info.isPoly) return;
+
+    var segInfo = findSegmentForIndex(currentText, charIndex);
+    if (!segInfo) return;
+
+    var segText = segInfo.text;
+    var char = charQueue[charIndex];
+
+    document.getElementById('popup-char').textContent = char;
+    document.getElementById('popup-scope').textContent = '修正在：' + segText;
+
+    var optionsHtml = '';
+    for (var pi = 0; pi < info.polyphonic.length; pi++) {
+      var py = info.polyphonic[pi];
+      var selected = py === info.result ? ' selected' : '';
+      optionsHtml += '<button class="popup-option' + selected + '" data-pinyin="' + py + '">' + py + '</button>';
+    }
+    var optionsDiv = document.getElementById('popup-options');
+    optionsDiv.innerHTML = optionsHtml;
+
+    optionsDiv.querySelectorAll('.popup-option').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var selectedPy = this.getAttribute('data-pinyin');
+        savePinyinFix(segText, charIndex, selectedPy);
+      });
+    });
+
+    document.getElementById('popup-overlay').classList.add('open');
+  }
+
+  function savePinyinFix(segText, charIndex, selectedPy) {
+    if (!window.pinyinPro) return;
+
+    var segPinyin = window.pinyinPro.pinyin(segText, { toneType: 'tone', type: 'array' });
+    var cjkCount = 0;
+    for (var ci = 0; ci < segText.length; ci++) {
+      if (segText[ci] >= '\u4e00' && segText[ci] <= '\u9fff') cjkCount++;
+    }
+    var segInfo = findSegmentForIndex(currentText, charIndex);
+    var offset = segInfo ? segInfo.offsetInSeg : 0;
+
+    var corrected = [];
+    var pyIdx = 0;
+    for (var ch = 0; ch < segText.length; ch++) {
+      if (segText[ch] >= '\u4e00' && segText[ch] <= '\u9fff') {
+        corrected.push(pyIdx === offset ? selectedPy : segPinyin[pyIdx]);
+        pyIdx++;
+      }
+    }
+    var newPinyinStr = corrected.join(' ');
+
+    // Save to localStorage
+    try {
+      var fixes = {};
+      var existing = localStorage.getItem('pinyin_fixes');
+      if (existing) fixes = JSON.parse(existing);
+      fixes[segText] = newPinyinStr;
+      localStorage.setItem('pinyin_fixes', JSON.stringify(fixes));
+
+      window.pinyinPro.customPinyin(fixes);
+    } catch(e) {}
+
+    document.getElementById('popup-overlay').classList.remove('open');
+    // Recompute and refresh
+    queuePinyin = computeQueuePinyin(currentText, charQueue);
+    updatePinyinRow();
   }
 
   function displayNext() {
@@ -269,6 +401,7 @@ button:hover { background: #3182ce; }
     cancelId++;
     busy = false;
 
+    currentText = text;
     var chars = [];
     for (var i = 0; i < text.length; i++) {
       var c = text.charAt(i);
@@ -329,6 +462,31 @@ button:hover { background: #3182ce; }
       looping ? writer.loopCharacterAnimation() : writer.pauseAnimation();
     });
 
+    function startLongPress(idx) {
+      longPressTimer = setTimeout(function() { showCorrectionPopup(idx); }, 500);
+    }
+    function cancelLongPress() {
+      if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+    }
+    document.getElementById('pinyin-row').addEventListener('mousedown', function(e) {
+      var cell = e.target.closest('.py-cell');
+      if (!cell) return;
+      var idx = Array.prototype.indexOf.call(cell.parentNode.children, cell);
+      if (idx < 0 || idx >= queuePinyin.length) return;
+      startLongPress(idx);
+    });
+    document.getElementById('pinyin-row').addEventListener('mouseup', cancelLongPress);
+    document.getElementById('pinyin-row').addEventListener('mouseleave', cancelLongPress);
+    document.getElementById('pinyin-row').addEventListener('touchstart', function(e) {
+      var cell = e.target.closest('.py-cell');
+      if (!cell) return;
+      var idx = Array.prototype.indexOf.call(cell.parentNode.children, cell);
+      if (idx < 0 || idx >= queuePinyin.length) return;
+      startLongPress(idx);
+    }, { passive: true });
+    document.getElementById('pinyin-row').addEventListener('touchend', cancelLongPress);
+    document.getElementById('pinyin-row').addEventListener('touchmove', cancelLongPress);
+
     document.getElementById('speed-selector').addEventListener('click', function(e) {
       var btn = e.target.closest('button');
       if (!btn) return;
@@ -339,10 +497,25 @@ button:hover { background: #3182ce; }
       btn.classList.add('active');
     });
 
+    document.getElementById('export-btn').addEventListener('click', function() {
+      try {
+        var data = localStorage.getItem('pinyin_fixes');
+        if (!data || data === '{}') { alert('暂无修正记录'); return; }
+        var blob = new Blob([data], { type: 'application/json' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'pinyin-corrections.json';
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch(e) { alert('导出失败：' + e.message); }
+    });
+
     document.getElementById('examples-btns').addEventListener('click', function(e) {
       if (e.target.tagName === 'BUTTON') startQueue(e.target.textContent);
     });
 
+    loadPinyinFixes();
     startQueue('阳光');
   });
 })();
